@@ -9,10 +9,25 @@ from machine import (
     ADC,
     Pin,
     PWM,
+    freq
 )
 import time
 
+# overclock the CPU to get more oomph out of it
+# default frequency is 125MHz, so double it
+OVERCLOCK_FREQUENCY = 250_000_000
+freq(OVERCLOCK_FREQUENCY)
+
+# our ADCs are 16-bit, so this defines our resolution
 UINT16_MAX_VALUE = 65535
+
+# Voltage limits
+
+MAX_INPUT_VOLTAGE = 6.0
+MIN_INPUT_VOLTAGE = -6.0
+
+MAX_OUTPUT_VOLTAGE = 6.0
+MIN_OUTPUT_VOLTAGE = -6.0
 
 # GPIO pins
 # See /documentation/Computer_Rev 1 documentation.pdf
@@ -280,6 +295,19 @@ class Input:
         raise NotImplementedError(".read() must be implemented by child classes")
 
 
+class CvInput(Input):
+    """Generic superclass for all CV inputs"""
+
+    def voltage(self) -> float:
+        """
+        Read the current value of the input and return it as a raw voltage.
+
+        :return: The raw input voltage, in the range [MIN_INPUT_VOLTAGE, MAX_INPUT_VOLTAGE]
+        """
+        return rescale(self.read(), -1, 1, MIN_INPUT_VOLTAGE, MAX_INPUT_VOLTAGE)
+
+
+
 class SwitchInput(Input):
     """
     Wrapper class for reading the 3-position switch.
@@ -307,11 +335,9 @@ class SwitchInput(Input):
             return self.POSITION_MIDDLE
 
 
-class AnalogueInput(Input):
+class MuxInput(Input):
     """
-    Wrapper class for reading the CV inputs.
-
-    This reads the data from the multiplexer.
+    Wrapper class for reading the CV inputs from the multiplexer.
 
     :param mux_key: The key we need to pass to the multiplexer to read the value
     """
@@ -328,7 +354,7 @@ class AnalogueInput(Input):
         return computer_mux.read(self.key)
 
 
-class KnobInput(AnalogueInput):
+class KnobInput(MuxInput):
     """
     Wrapper class for reading the 3 knobs.
 
@@ -354,6 +380,55 @@ class KnobInput(AnalogueInput):
             return arr[x]
 
 
+class MuxCvInput(MuxInput, CvInput):
+    """
+    Wrapper class for the multiplexed CV inputs.
+
+    :param mux_key: The key we need to pass to the multiplexer to read the value
+    """
+
+    def __init__(self, mux_key):
+        super().__init__(mux_key)
+
+    def read(self) -> float:
+        """
+        Read the current value of the input and return it as a value in the range [-1, 1].
+
+        :return: A value in the range -1 to +1 indicating the CV level
+        """
+        return super().read() * 2.0 - 1.0
+
+
+class CvInput(CvInput):
+    """
+    Wrapper class for reading the analogue & audio inputs
+
+    This reads the data directly from an adc pin
+
+    :param pin: The pin we read from
+    """
+
+    def __init__(self, pin: int, samples: int=32):
+        self.pin = Pin(pin, Pin.IN)
+        self.adc = ADC(self.pin)
+        self.samples = samples
+
+    def _sample_adc(self, samples: int=None):
+        value = 0
+        for _ in range(samples or self.samples):
+            value += self.adc.read_u16()
+        return round(value / (samples or self.samples))
+
+    def read(self) -> float:
+        """
+        Read the current value of the input and return it as a value in the range [-1, 1].
+
+        :return: A value in the range -1 to +1 indicating the CV level
+        """
+        adc = self._sample_adc(self.samples)
+        return rescale(adc, 0, UINT16_MAX_VALUE, MIN_INPUT_VOLTAGE, MAX_INPUT_VOLTAGE)
+
+
 class PulseInput(Input):
     """
     Wrapper for the pulse (digital) inputs.
@@ -365,7 +440,7 @@ class PulseInput(Input):
     :param debounce_delay: The number of milliseconds we use for debouncing the input
     """
 
-    def __init__(self, pin: int, debounce_delay: int=500):
+    def __init__(self, pin: int, debounce_delay: int=10):
         self.pin = Pin(pin, Pin.IN)
         self.debounce_delay = debounce_delay
 
@@ -383,10 +458,7 @@ class PulseInput(Input):
 
     def _bounce_wrapper(self, pin):
         """IRQ handler wrapper for falling and rising edge callback functions."""
-        HIGH = 1
-        LOW = 0
-
-        if self.value() == HIGH:
+        if self.value() == 1:
             if time.ticks_diff(time.ticks_ms(), self.last_rising_ms) < self.debounce_delay:
                 return
             self.last_rising_ms = time.ticks_ms()
@@ -521,9 +593,6 @@ class AnalogueOutput(Output):
     :param pin: The GPIO pin the output is connected to
     """
 
-    MAX_VOLTS = 6.0
-    MIN_VOLTS = -6.0
-
     def __init__(self, pin):
         PWM_FREQ = 60000
         DUTY_U16 = 32768
@@ -555,9 +624,9 @@ class AnalogueOutput(Output):
             voltage is returned.
         """
         if volts is None:
-            return rescale(self._duty, 0, UINT16_MAX_VALUE, self.MIN_VOLTS, self.MAX_VOLTS)
+            return rescale(self._duty, 0, UINT16_MAX_VALUE, MIN_OUTPUT_VOLTAGE, MAX_OUTPUT_VOLTAGE)
         else:
-            value = rescale(volts, self.MIN_VOLTS, self.MAX_VOLTS, -1, 1)
+            value = rescale(volts, MIN_OUTPUT_VOLTAGE, MAX_OUTPUT_VOLTAGE, -1, 1)
             self.write(value)
             return volts
 
@@ -584,10 +653,10 @@ knobs = (
     knob_y,
 )  #: Tuple of all knobs for convenience/iteration
 switch_z = SwitchInput()  #: the 3-position Z switch
-cv_in1 = AnalogueInput(computer_mux.MUX_CV1)  #: CV input 1
-cv_in2 = AnalogueInput(computer_mux.MUX_CV2)  #: CV input 2
-cv_audio_in_l = AnalogueInput(PIN_AUDIO_IN_L)  #: CV/Audio L input
-cv_audio_in_r = AnalogueInput(PIN_AUDIO_IN_R)  #: CV/Audio R input
+cv_in1 = MuxCvInput(computer_mux.MUX_CV1)  #: CV input 1
+cv_in2 = MuxCvInput(computer_mux.MUX_CV2)  #: CV input 2
+cv_audio_in_l = CvInput(PIN_AUDIO_IN_L)  #: CV/Audio L input
+cv_audio_in_r = CvInput(PIN_AUDIO_IN_R)  #: CV/Audio R input
 cv_ins = (
     cv_in1,
     cv_in2,
