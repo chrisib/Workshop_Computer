@@ -59,13 +59,39 @@ PIN_DAC_SDI = 19
 PIN_NORM_PROBE = 4
 
 # 3-bits for board revisions
-# 000 - Proto1.2
-# 100 - Proto2.0, 2.0.1, Rev 1
 PIN_REV_1 = 5
 PIN_REV_2 = 6
 PIN_REV_3 = 7
 
 # helper functions
+
+def convert(n: int, base: int=2) -> str:
+    """
+    Convert a number from one base to another.
+
+    :param n: The integer to convert
+    :param base: The base we're converting to
+    :return: The string representation of the number in the given base
+    """
+    string = "0123456789ABCDEF"
+    if n < base:
+        return string[n]
+    else:
+        return convert(n // base, base) + string[n % base]
+
+
+def zfl(s: str|int, width: int=8) -> str:
+    """
+    Zero-fill a string.
+
+    The string is padded with leading zeros, such that it is at least width characters long.
+
+    :param s: The string to pad
+    :param width: The desired length of the string
+    :return: The provided string, padded with zeros
+    """
+    return "{:0>{w}}".format(s, w=width)
+
 
 def clamp(
     x: int|float,
@@ -151,17 +177,50 @@ def reset():
 
 # Hardware classes
 
+class BoardRevision:
+    """Specifies the board revision"""
+
+    def __init__(self):
+        self.pin_a = Pin(PIN_REV_1)
+        self.pin_b = Pin(PIN_REV_2)
+        self.pin_c = Pin(PIN_REV_3)
+
+    @property
+    def version(self):
+        """
+        Get the board version.
+
+        :return: A string indicating the board revision
+        """
+        revisions = {
+            "000": "Proto1.2",
+            "100": "2.0.1"
+        }
+
+        bitstr = f"{self.pin_a.value()}{self.pin_b.value()}{self.pin_c.value()}"
+        return revisions.get(bitstr, "unknown")
+
+
+
 class Multiplexer:
     """
-    Base class for all inputs via the multiplexer.
+    Interface class for reading the multiplexed inputs.
 
-    Truth table:
+    The multiplexer has 2 channels and 2 control bits. The following table shows what the
+    control bits should be to reach each of the 6 multiplexed values:
+
     | Logic A | Logic B | ADC Channel 2 (GPIO 28) | ADC Channel 3 (GPIO 29) |
     |---------|---------|-------------------------|-------------------------|
     | 0       | 0       | Main Knob               | CV 1                    |
     | 0       | 1       | X Knob                  | CV 2                    |
     | 1       | 0       | Y Knob                  | CV 1                    |
     | 1       | 1       | Z switch                | CV 2                    |
+
+    Generally users should never have to interact directly with this class; instead users should
+    use the following variables defined later in this file:
+    - knob_main, knob_x, knob_y -- the 3 knobs
+    - switch_z -- the 3-position switch
+    - cv_in1, cv_in2 -- the two analogue input jacks
 
     see: https://pdf1.alldatasheet.com/datasheet-pdf/view/454218/UTC/4052.html
     see: https://github.com/TomWhitwell/Hello_Computer/blob/main/Demonstrations%2BHelloWorlds/CircuitPython/mtm_computer.py#L36
@@ -214,7 +273,14 @@ class Multiplexer:
         return value / UINT16_MAX_VALUE
 
 
-class SwitchInput:
+class Input:
+    """Generic superclass for all inputs."""
+
+    def read(self) -> float|int|bool:
+        raise NotImplementedError(".read() must be implemented by child classes")
+
+
+class SwitchInput(Input):
     """
     Wrapper class for reading the 3-position switch.
 
@@ -241,7 +307,7 @@ class SwitchInput:
             return self.POSITION_MIDDLE
 
 
-class AnalogueInput:
+class AnalogueInput(Input):
     """
     Wrapper class for reading the CV inputs.
 
@@ -288,7 +354,7 @@ class KnobInput(AnalogueInput):
             return arr[x]
 
 
-class PulseInput:
+class PulseInput(Input):
     """
     Wrapper for the pulse (digital) inputs.
 
@@ -386,6 +452,9 @@ class Output:
     def __init__(self, pin: int):
         self.pin = Pin(pin, Pin.OUT)  #: the low-level Pin instance
 
+    def write(self, _):
+        raise NotImplemented(".write(x) must be implemented by subclasses")
+
 
 class PulseOutput(Output):
     """
@@ -428,6 +497,21 @@ class PulseOutput(Output):
             self.pin.value(0)
         else:
             self.pin.value(1)
+
+
+class LedOutput(PulseOutput):
+    """
+    Wrapper for LED outputs.
+
+    These are fundamentally the same as the pulse outputs, but we use a different class
+    just to make the distinction obvious to the programmer that these won't generate any
+    voltage.
+
+    :param pin: The GPIO pin the output is connected to
+    """
+
+    def __init__(self, pin: int):
+        super().__init__(pin)
 
 
 class AnalogueOutput(Output):
@@ -487,6 +571,8 @@ class AnalogueOutput(Output):
 
 # Hardware initialization
 
+board_revision = BoardRevision()
+
 # Initialize multiplexed inputs
 computer_mux = Multiplexer()
 knob_main = KnobInput(computer_mux.MUX_MAIN_KNOB)
@@ -497,7 +583,7 @@ knobs = (
     knob_x,
     knob_y,
 )  #: Tuple of all knobs for convenience/iteration
-z_switch = SwitchInput()
+switch_z = SwitchInput()
 cv_in1 = AnalogueInput(computer_mux.MUX_CV1)
 cv_in2 = AnalogueInput(computer_mux.MUX_CV2)
 cv_ins = (
@@ -528,12 +614,12 @@ pulse_outs = (
 )  #: Tuple of all pulse outputs for convenience/iteration
 
 # Initialize LEDs
-led1 = Pin(PIN_LED_1, Pin.OUT)  #: LED 1 control
-led2 = Pin(PIN_LED_2, Pin.OUT)  #: LED 1 control
-led3 = Pin(PIN_LED_3, Pin.OUT)  #: LED 1 control
-led4 = Pin(PIN_LED_4, Pin.OUT)  #: LED 1 control
-led5 = Pin(PIN_LED_5, Pin.OUT)  #: LED 1 control
-led6 = Pin(PIN_LED_6, Pin.OUT)  #: LED 1 control
+led1 = LedOutput(PIN_LED_1)
+led2 = LedOutput(PIN_LED_2)
+led3 = LedOutput(PIN_LED_3)
+led4 = LedOutput(PIN_LED_4)
+led5 = LedOutput(PIN_LED_5)
+led6 = LedOutput(PIN_LED_6)
 leds = (
     led1,
     led2,
