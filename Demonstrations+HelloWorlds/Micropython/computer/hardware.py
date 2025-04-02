@@ -1,3 +1,16 @@
+# Copyright 2025 Music Thing Modular
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """
 Low-level hardware definitions & interface instances.
 
@@ -7,6 +20,7 @@ else builds on top of this foundation.
 
 from machine import (
     ADC,
+    I2C,
     Pin,
     PWM,
     freq
@@ -215,6 +229,67 @@ class BoardRevision:
         bitstr = f"{self.pin_a.value()}{self.pin_b.value()}{self.pin_c.value()}"
         return revisions.get(bitstr, "unknown")
 
+
+class Eeprom:
+    """
+    EEPROM is connected via I2C.
+
+    Connects to Zetta ZD24C08A EEPROM, clone of 24C0* chips.
+    8k I2C eeprom on GPIO16 (SDA) and GPIO17 (SCL).
+    Contains 8 kbits (1024 x 8).
+    SDA & SCL lines have 2.2k pullups.
+    Data is stored in 8 x 1024 pages addresses 0x50 to 0x5B.
+    """
+
+    EE_PAGE_ADDRESS = 0x50
+
+    EEPROM_STRUCTURE = {
+        0: 2,   # magic number = 2001
+                # if number is present, eeprom has been initialized
+        2: 1,   # version number 0-255
+        3: 1,   # padding
+        4: 1,   # Channel 0 - Number of entries 0-9
+        5: 40,  # 10 x 4 byte blocks:
+                # 1 x 4-bit voltage + 4 bits space |
+                # 1 x 24 bit setting = 32 bits = 4 bytes
+        45: 1,  # Channel 1 - Number of entries 0-9
+        46: 40, # 10 x 4-byte blocks:
+                # 1x 4-bit voltage + 4 bits space |
+                # 1 x 24 bit setting = 32 bits = 4 bytes
+        86: 2   # CRC Check over previous data
+    }
+
+    def __init__(self):
+        self.i2c = I2C(
+            0,
+            sda=Pin(PIN_EEPROM_SDA, Pin.OUT, Pin.PULL_UP),
+            scl=Pin(PIN_EEPROM_SCL, Pin.OUT, Pin.PULL_UP),
+        )
+
+        self.rw_buffer = bytearray(1)
+
+    def read_byte(self, eeAddress):
+        device_address = self.EE_PAGE_ADDRESS | ((eeAddress >> 7) & 0x0f)
+        low_byte_address = eeAddress & 0xFF
+        self.i2c.readfrom_mem_into(device_address, low_byte_address, self.rw_buffer)
+        return self.rw_buffer[0]
+
+    def read_uint16(self, eeAddress):
+        low_byte = self.read_byte(eeAddress)
+        high_byte = self.read_byte(eeAddress + 1)
+        return (high_byte << 8) | low_byte
+
+    def write_byte(self, eeAddress, data):
+        device_address = self.EE_PAGE_ADDRESS | ((eeAddress >> 7) & 0x0f)
+        low_byte_address = eeAddress & 0xFF
+        self.rw_buffer[0] = data
+        self.i2c.writeto_mem(device_address, low_byte_address, self.rw_buffer)
+
+    def write_uint16(self, eeAddress, data):
+        low_byte = data & 0xff
+        high_byte = (data >> 8) & 0xff
+        self.write_byte(eeAddress, low_byte)
+        self.write_byte(eeAddress + 1, high_byte)
 
 
 class Multiplexer:
@@ -715,6 +790,9 @@ leds = (
     led5,
     led6,
 )  #: Tuple of all LEDs for convenience/iteration
+
+# Initialize eeprom
+eeprom = Eeprom()
 
 # Ensure everything is off when this module gets imported
 reset()
