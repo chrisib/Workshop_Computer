@@ -571,55 +571,73 @@ class AnalogueOutput(Output):
 
 # Hardware initialization
 
-board_revision = BoardRevision()
+board_revision = BoardRevision()  #: Reader for the board revision
 
 # Initialize multiplexed inputs
 computer_mux = Multiplexer()
-knob_main = KnobInput(computer_mux.MUX_MAIN_KNOB)
-knob_x = KnobInput(computer_mux.MUX_X_KNOB)
-knob_y = KnobInput(computer_mux.MUX_Y_KNOB)
+knob_main = KnobInput(computer_mux.MUX_MAIN_KNOB)  #: Main knob input
+knob_x = KnobInput(computer_mux.MUX_X_KNOB)  #: X knob input
+knob_y = KnobInput(computer_mux.MUX_Y_KNOB)  #: Y knob input
 knobs = (
     knob_main,
     knob_x,
     knob_y,
 )  #: Tuple of all knobs for convenience/iteration
-switch_z = SwitchInput()
-cv_in1 = AnalogueInput(computer_mux.MUX_CV1)
-cv_in2 = AnalogueInput(computer_mux.MUX_CV2)
+switch_z = SwitchInput()  #: the 3-position Z switch
+cv_in1 = AnalogueInput(computer_mux.MUX_CV1)  #: CV input 1
+cv_in2 = AnalogueInput(computer_mux.MUX_CV2)  #: CV input 2
+cv_audio_in_l = AnalogueInput(PIN_AUDIO_IN_L)  #: CV/Audio L input
+cv_audio_in_r = AnalogueInput(PIN_AUDIO_IN_R)  #: CV/Audio R input
 cv_ins = (
     cv_in1,
     cv_in2,
+    cv_audio_in_l,
+    cv_audio_in_r,
 )  #: Tuple of all CV inputs for convenience/iteration
+cv_audio_in = (
+    cv_audio_in_l,
+    cv_audio_in_r,
+)  #: Tuple of all CV/audio inputs for convenience/iteration
 
 # Initialize pulse/digital inputs
-pulse_in1 = PulseInput(PIN_PULSE_IN_1)
-pulse_in2 = PulseInput(PIN_PULSE_IN_2)
+pulse_in1 = PulseInput(PIN_PULSE_IN_1)  #: Pulse/digital input 1
+pulse_in2 = PulseInput(PIN_PULSE_IN_2)  #: Pulse/digital input 2
 pulse_ins = (
     pulse_in1,
     pulse_in2,
 )  #: Tuple of all pulse inputs for convenience/iteration
 
-# Initialize the outputs
-cv_out1 = AnalogueOutput(PIN_CV_OUT_1)
-cv_out2 = AnalogueOutput(PIN_CV_OUT_2)
+# Analogue outputs
+cv_out1 = AnalogueOutput(PIN_CV_OUT_1)  #: CV output 1
+cv_out2 = AnalogueOutput(PIN_CV_OUT_2)  #: CV output 2
+#cv_audio_out_l = AnalogueOutput()  #: CV/Audio output L
+#cv_audio_out_r = AnalogueOutput()  #: CV/Audio output R
 cv_outs = (
     cv_out1,
     cv_out2,
+#    cv_audio_out_l,
+#    cv_audio_out_r,
 )  #: Tuple of all CV outputs for convenience/iteration
-pulse_out1 = PulseOutput(PIN_PULSE_OUT_1)
-pulse_out2 = PulseOutput(PIN_PULSE_OUT_2)
+#cv_audio_out = (
+#    cv_audio_out_l,
+#    cv_audio_out_r,
+#)  #: Tuple of all cv/audio outputs for convenience/iteration
+
+# Pulse outputs
+pulse_out1 = PulseOutput(PIN_PULSE_OUT_1)  #: Pulse/digital output 1
+pulse_out2 = PulseOutput(PIN_PULSE_OUT_2)  #: Pulse/digital output 2
 pulse_outs = (
     pulse_out1,
     pulse_out2,
 )  #: Tuple of all pulse outputs for convenience/iteration
 
 # Initialize LEDs
-led1 = LedOutput(PIN_LED_1)
-led2 = LedOutput(PIN_LED_2)
-led3 = LedOutput(PIN_LED_3)
-led4 = LedOutput(PIN_LED_4)
-led5 = LedOutput(PIN_LED_5)
-led6 = LedOutput(PIN_LED_6)
+led1 = LedOutput(PIN_LED_1)  #: LED 1 (top-left)
+led2 = LedOutput(PIN_LED_2)  #: LED 2 (top-right)
+led3 = LedOutput(PIN_LED_3)  #: LED 3 (center-left)
+led4 = LedOutput(PIN_LED_4)  #: LED 4 (center-right)
+led5 = LedOutput(PIN_LED_5)  #: LED 5 (bottom-left)
+led6 = LedOutput(PIN_LED_6)  #: LED 6 (bottom-right)
 leds = (
     led1,
     led2,
