@@ -1,8 +1,23 @@
+# Copyright 2025 Music Thing Modular
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """
 Workshop Computer re-implementation of EuroPi's Lutra.
 
 Lutra is a re-imagining of Expert Sleepers' Otterley; multiple free-running LFOs
 with speed & spread control.
+
+See: https://github.com/Allen-Synthesis/EuroPi/blob/main/software/contrib/lutra.py
 
 Outputs:
 - CV1: primary LFO
@@ -20,7 +35,7 @@ Controls:
 - Main knob: base speed
 - X knob: spread control (anticlockwise: less spread, clockwise: more spread)
 - Y knob: wave shape
-- Z switch: center: bipolar -6 to +6 V output, up: unipolar 0 to +6 V, down: unipolar -6 to 0 V
+- Z switch: center: bipolar -5 to +5 V output, up: unipolar 0 to +5 V, down: unipolar -5 to 0 V
 
 Wave shape is one of:
 - sine
@@ -185,13 +200,13 @@ class Lutra:
             range_switch = switch_z.read()
             if range_switch == switch_z.POSITION_MIDDLE:
                 range_offset = 0.0
-                range_multiplier = 1.0
+                range_multiplier = 5.0
             elif range_switch == switch_z.POSITION_UP:
                 range_offset = 1.0
-                range_multiplier = 0.5
+                range_multiplier = 2.5
             else:
                 range_offset = -1.0
-                range_multiplier = 0.5
+                range_multiplier = 2.5
 
             # advance the waves
             for i in range(len(self.waves)):
@@ -199,7 +214,7 @@ class Lutra:
                     cv_outs[i].off()
                 else:
                     output_level = (self.waves[i].tick() + range_offset) * range_multiplier
-                    cv_outs[i].write(output_level)
+                    cv_outs[i].voltage(output_level)
 
 
 if __name__ == "__main__":
