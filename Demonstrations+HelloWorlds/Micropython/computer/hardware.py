@@ -593,15 +593,25 @@ class PulseInput(Input):
 class Output:
     """
     Generic superclass for pulse & analogue outputs.
-
-    :param pin: The GPIO pin the output is connected to
     """
-
-    def __init__(self, pin: int):
-        self.pin = Pin(pin, Pin.OUT)  #: the low-level Pin instance
-
     def write(self, _):
         raise NotImplemented(".write(x) must be implemented by subclasses")
+
+    def off(self):
+        """
+        Turn this output off
+
+        By default we can just write 0, but some classes may need to override this
+        """
+        self.write(0)
+
+    def on(self):
+        """
+        Turn this output on.
+
+        By default we can just write 1, but some classes may need to override this
+        """
+        self.write(1)
 
 
 class PulseOutput(Output):
@@ -614,7 +624,7 @@ class PulseOutput(Output):
     """
 
     def __init__(self, pin):
-        super().__init__(pin)
+        self.pin = Pin(pin)
 
     def on(self):
         """Turn the output on."""
@@ -673,7 +683,7 @@ class AnalogueOutput(Output):
         PWM_FREQ = 60000
         DUTY_U16 = 32768
 
-        super().__init__(pin)
+        self.pin = Pin(pin)
         self.pwm = PWM(
             self.pin,
             freq=PWM_FREQ,
@@ -705,14 +715,6 @@ class AnalogueOutput(Output):
             value = rescale(volts, MIN_OUTPUT_VOLTAGE, MAX_OUTPUT_VOLTAGE, -1, 1)
             self.write(value)
             return volts
-
-    def off(self):
-        """Turn this output off."""
-        self.write(0)
-
-    def on(self):
-        """Turn this output on to its highest level."""
-        self.write(1)
 
 
 class AudioOutput(Output):
