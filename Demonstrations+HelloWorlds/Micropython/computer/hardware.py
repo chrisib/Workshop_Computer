@@ -23,6 +23,7 @@ from machine import (
     I2C,
     Pin,
     PWM,
+    SPI,
     freq
 )
 import time
@@ -78,10 +79,10 @@ PIN_LED_6 = 15
 PIN_EEPROM_SDA = 16
 PIN_EEPROM_SCL = 17
 
-# DAC
+# Audio out (SPI)
 PIN_DAC_SCK = 18
+PIN_DAC_MOSI = 19
 PIN_DAC_CS = 21
-PIN_DAC_SDI = 19
 
 # Normalization probe
 # Toggle to identify sockets with plugs in them
@@ -713,6 +714,49 @@ class AnalogueOutput(Output):
         """Turn this output on to its highest level."""
         self.write(1)
 
+
+class AudioOutput(Output):
+    """
+    SPI-controlled audio output
+
+    We can't actually operate at audio rates, so this is treated as an additional CV output
+
+    :param channel: The DAC channel (used by the DAC's CS pin) (0 or 1)
+    """
+
+    def __init__(self, channel: int):
+        self.spi = SPI(
+            0,
+            baudrate=20_000_000,
+            sck=Pin(PIN_DAC_SCK),
+            mosi=Pin(PIN_DAC_MOSI),
+        )
+        self.channel_select = Pin(PIN_DAC_MOSI, Pin.OUT)
+        self.channel = channel
+
+    def write(self, value: float):
+        """
+        Write a value to the DAC.
+
+        :param value: A value in the range [-1, 1] indicating the desired output level
+        """
+        self.channel_select.value(self.channel)
+        level16 = convert(value, -1, 1, 0, UINT16_MAX_VALUE)
+        low_byte = level16 & 0xff
+        high_byte = (level16 >> 8) & 0xff
+        self.spi.write(bytes((high_byte, low_byte)))
+
+    def voltage(self, volts: float):
+        """
+        Send a raw voltage to the output.
+
+        :param volts: The desired output voltage, in the range
+            [MIN_OUTPUT_VOLTAGE to MAX_OUTPUT_VOLTAGE]
+        """
+        level = convert(volts, MIN_OUTPUT_VOLTAGE, MAX_OUTPUT_VOLTAGE, -1, 1)
+        self.write(level)
+
+
 # Hardware initialization
 
 board_revision = BoardRevision()  #: Reader for the board revision
@@ -754,18 +798,18 @@ pulse_ins = (
 # Analogue outputs
 cv_out1 = AnalogueOutput(PIN_CV_OUT_1)  #: CV output 1
 cv_out2 = AnalogueOutput(PIN_CV_OUT_2)  #: CV output 2
-#cv_audio_out_l = AnalogueOutput()  #: CV/Audio output L
-#cv_audio_out_r = AnalogueOutput()  #: CV/Audio output R
+cv_audio_out_l = AudioOutput(0)  #: CV/Audio output L -- CV only
+cv_audio_out_r = AudioOutput(1)  #: CV/Audio output R -- CV only
 cv_outs = (
     cv_out1,
     cv_out2,
-#    cv_audio_out_l,
-#    cv_audio_out_r,
+    cv_audio_out_l,
+    cv_audio_out_r,
 )  #: Tuple of all CV outputs for convenience/iteration
-#cv_audio_out = (
-#    cv_audio_out_l,
-#    cv_audio_out_r,
-#)  #: Tuple of all cv/audio outputs for convenience/iteration
+cv_audio_out = (
+    cv_audio_out_l,
+    cv_audio_out_r,
+)  #: Tuple of all cv/audio outputs for convenience/iteration
 
 # Pulse outputs
 pulse_out1 = PulseOutput(PIN_PULSE_OUT_1)  #: Pulse/digital output 1
@@ -793,6 +837,9 @@ leds = (
 
 # Initialize eeprom
 eeprom = Eeprom()
+
+# The normalization probe
+normalization_probe = Pin(PIN_NORM_PROBE, Pin.OUT)
 
 # Ensure everything is off when this module gets imported
 reset()
